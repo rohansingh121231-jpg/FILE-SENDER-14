@@ -1,14 +1,13 @@
-<!DOCTYPE html>
+ <!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
     <title>QR Send - E2E Encrypted</title>
     
-    <!-- ✅ ERUDA CONSOLE - Mobile Debugging -->
+    <!-- ERUDA CONSOLE -->
     <script src="https://cdn.jsdelivr.net/npm/eruda"></script>
     <script>eruda.init();</script>
-    <!-- ✅ End Eruda -->
     
     <script src="https://cdnjs.cloudflare.com/ajax/libs/peerjs/1.5.4/peerjs.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
@@ -926,6 +925,7 @@
 
         let html5QrCode = null;
         let isScanning = false;
+        let hasScanned = false; // CRITICAL FIX: Prevent multiple scans
 
         window.APP_PEER = null;
         window.APP_CONNECTION = null;
@@ -933,6 +933,7 @@
 
         function openScanner() {
             console.log('📷 Opening scanner...');
+            hasScanned = false; // Reset flag
             document.getElementById('scanner-modal').classList.add('active');
             document.body.style.overflow = 'hidden';
             startScanner();
@@ -970,43 +971,29 @@
                 { facingMode: "environment" },
                 config,
                 (decodedText) => {
+                    // CRITICAL FIX: Prevent multiple scans
+                    if (hasScanned) {
+                        console.log('⚠ Already processed this scan, ignoring...');
+                        return;
+                    }
+                    hasScanned = true;
+                    
                     console.log('✓✓✓ QR SCANNED:', decodedText);
+                    console.log('🔍 Type:', typeof decodedText);
+                    console.log('🔍 Length:', decodedText.length);
                     
                     if (navigator.vibrate) {
                         navigator.vibrate(200);
                     }
                     
+                    // CRITICAL: Stop scanner BEFORE processing
                     stopScanner();
                     closeScanner();
                     
-                    try {
-                        const url = new URL(decodedText);
-                        const scannedPeerId = url.hash.substring(1);
-                        
-                        console.log('🎯 Extracted Peer ID:', scannedPeerId);
-                        
-                        if (scannedPeerId && !window.IS_SWITCHING) {
-                            window.IS_SWITCHING = true;
-                            console.log('🔄 TRIGGERING CLIENT MODE SWITCH...');
-                            
-                            if (window.switchToClientAndConnect) {
-                                window.switchToClientAndConnect(scannedPeerId);
-                            } else {
-                                console.error('❌ Switch function not found!');
-                                alert('Error: Cannot switch to client mode');
-                                window.IS_SWITCHING = false;
-                            }
-                        } else if (!scannedPeerId) {
-                            console.error('❌ Invalid peer ID');
-                            alert('Invalid QR code format');
-                        } else {
-                            console.log('⚠ Already switching...');
-                        }
-                    } catch (e) {
-                        console.error('❌ QR parse error:', e);
-                        alert('Invalid QR code');
-                        window.IS_SWITCHING = false;
-                    }
+                    // Small delay to ensure scanner is fully stopped
+                    setTimeout(() => {
+                        processQRCode(decodedText);
+                    }, 100);
                 },
                 (errorMessage) => {
                     // Silent
@@ -1019,6 +1006,68 @@
             });
         }
 
+        // CRITICAL FIX: Separate function for QR processing
+        function processQRCode(decodedText) {
+            console.log('=== PROCESSING QR CODE ===');
+            console.log('URL:', decodedText);
+            
+            try {
+                // Try to parse as URL
+                const url = new URL(decodedText);
+                console.log('✓ Valid URL object created');
+                console.log('Origin:', url.origin);
+                console.log('Pathname:', url.pathname);
+                console.log('Hash:', url.hash);
+                console.log('Hash length:', url.hash.length);
+                
+                // Extract peer ID (remove # symbol)
+                const scannedPeerId = url.hash.substring(1);
+                console.log('🎯 Extracted Peer ID:', scannedPeerId);
+                console.log('🎯 Peer ID length:', scannedPeerId.length);
+                console.log('🎯 Peer ID type:', typeof scannedPeerId);
+                
+                // Validate peer ID
+                if (!scannedPeerId || scannedPeerId.trim() === '') {
+                    console.error('❌ Empty peer ID!');
+                    alert('QR code has no peer ID');
+                    hasScanned = false;
+                    return;
+                }
+                
+                console.log('✓ Peer ID is valid');
+                
+                // Check if already switching
+                if (window.IS_SWITCHING) {
+                    console.log('⚠ Already switching, ignoring...');
+                    return;
+                }
+                
+                // Check if switch function exists
+                if (!window.switchToClientAndConnect) {
+                    console.error('❌❌❌ Switch function NOT FOUND!');
+                    alert('Error: App not ready. Please refresh.');
+                    hasScanned = false;
+                    return;
+                }
+                
+                console.log('✓ Switch function exists');
+                window.IS_SWITCHING = true;
+                console.log('🔄 TRIGGERING CLIENT MODE SWITCH...');
+                
+                // Call the switch function
+                window.switchToClientAndConnect(scannedPeerId);
+                
+            } catch (e) {
+                console.error('❌❌❌ QR parse FAILED:', e);
+                console.error('Error name:', e.name);
+                console.error('Error message:', e.message);
+                console.error('Stack:', e.stack);
+                alert('Invalid QR code: ' + e.message);
+                window.IS_SWITCHING = false;
+                hasScanned = false;
+            }
+        }
+
         function stopScanner() {
             if (html5QrCode && isScanning) {
                 console.log('🛑 Stopping scanner...');
@@ -1029,6 +1078,7 @@
                     console.log('✓ Scanner stopped');
                 }).catch((err) => {
                     console.error('Stop error:', err);
+                    html5QrCode = null;
                     isScanning = false;
                 });
             }
@@ -1111,6 +1161,7 @@
                 }
             }
 
+            // CRITICAL: Define switch function IMMEDIATELY
             window.switchToClientAndConnect = function(targetPeerId) {
                 console.log('===================================');
                 console.log('🔄 SWITCHING TO CLIENT MODE');
@@ -1186,9 +1237,11 @@
                                     statusEl.textContent = '❌ Not found';
                                     showSwitchButton();
                                     window.IS_SWITCHING = false;
+                                    hasScanned = false;
                                 }
                             } else {
                                 window.IS_SWITCHING = false;
+                                hasScanned = false;
                             }
                         });
                         
@@ -1196,9 +1249,12 @@
                         console.error('❌ Failed to create peer:', e);
                         statusEl.textContent = '❌ Error';
                         window.IS_SWITCHING = false;
+                        hasScanned = false;
                     }
                 }, 500);
             };
+            
+            console.log('✓ Switch function registered globally');
 
             function switchToHostMode(reason) {
                 console.log('→ Switch to host:', reason);
@@ -1219,6 +1275,9 @@
 
             function initializePeer() {
                 console.log('🔧 Initializing peer...');
+                
+                statusEl.textContent = 'Initializing...';
+                
                 try {
                     peer = new Peer({
                         config: {
@@ -1258,6 +1317,8 @@
                         isHost = true;
                         qrCodeContainer.style.display = 'block';
                         scanInstructions.style.display = 'none';
+                        
+                        statusEl.textContent = 'Generating QR...';
                         
                         connectUrl = `${window.location.origin}${window.location.pathname}#${myId}`;
                         qrEl.innerHTML = '';
@@ -1344,6 +1405,7 @@
                         statusEl.textContent = '❌ Failed';
                         showSwitchButton();
                         window.IS_SWITCHING = false;
+                        hasScanned = false;
                     }
                 };
 
@@ -1361,6 +1423,7 @@
                         if (!connectionFailed) {
                             connectionRetryCount = 0;
                             window.IS_SWITCHING = false;
+                            hasScanned = false;
                             setupConnection(conn);
                         }
                     });

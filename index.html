@@ -951,12 +951,17 @@
         }
 
         function closeScanner() {
+            // ADDED GUARD: Don't do anything if already closing
+            if (!document.getElementById('scanner-modal').classList.contains('active')) {
+                console.log('⚠ closeScanner called but modal is already closed.');
+                return;
+            }
             console.log('❌ Closing scanner...');
             document.getElementById('scanner-modal').classList.remove('active');
             document.body.style.overflow = '';
-            stopScanner();
-            // Re-allow peer init *only if* no scan was successful
-            if (!hasScanned) {
+            stopScanner(); // This is now the only place that calls stopScanner after a scan
+            // Re-allow peer init *only if* no scan was successful (and we are not reloading)
+            if (!hasScanned && !IS_RELOADING) {
                 ALLOW_PEER_INIT = true;
                 console.log('✅ RE-ENABLED peer auto-init');
             }
@@ -1002,13 +1007,19 @@
                         navigator.vibrate(200);
                     }
                     
-                    // Stop scanner async
-                    stopScanner();
-                    closeScanner();
-                    
-                    // Process the QR code
-                    console.log('→ Calling processQRCode NOW...');
-                    processQRCode(decodedText);
+                    // --- MODIFIED LOGIC ---
+                    // Use setTimeout to break out of the scanner's execution context
+                    // and prevent any race conditions.
+                    setTimeout(() => {
+                        // 1. Process the QR code first. This will set the IS_RELOADING flag.
+                        console.log('→ Calling processQRCode NOW (from timeout)...');
+                        processQRCode(decodedText);
+
+                        // 2. Then, close the scanner modal. closeScanner() will handle stopping the camera.
+                        console.log('→ Calling closeScanner NOW (from timeout)...');
+                        closeScanner();
+                    }, 0); // 0ms timeout executes after current stack.
+                    // --- END MODIFIED LOGIC ---
                 },
                 (errorMessage) => {
                     // Silent
@@ -1742,4 +1753,6 @@
     </script>
 </body>
 </html>
+
+
 

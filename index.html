@@ -926,10 +926,7 @@
         let html5QrCode = null;
         let isScanning = false;
         let hasScanned = false;
-
-        // CRITICAL: Block peer init during scan
         let ALLOW_PEER_INIT = true;
-        let PENDING_PEER_ID = null;
 
         window.APP_PEER = null;
         window.APP_CONNECTION = null;
@@ -975,7 +972,6 @@
                 { facingMode: "environment" },
                 config,
                 (decodedText) => {
-                    // CRITICAL FIX: Prevent multiple scans AND block peer init
                     if (hasScanned) {
                         console.log('⚠ Already processed, ignoring...');
                         return;
@@ -986,7 +982,7 @@
                     console.log('🔍 Type:', typeof decodedText);
                     console.log('🔍 Length:', decodedText.length);
                     
-                    // BLOCK PEER INIT IMMEDIATELY
+                    // CRITICAL: Block peer init
                     ALLOW_PEER_INIT = false;
                     console.log('🚫 BLOCKED peer auto-init');
                     
@@ -994,10 +990,12 @@
                         navigator.vibrate(200);
                     }
                     
+                    // Stop scanner async
                     stopScanner();
                     closeScanner();
                     
-                    // Process IMMEDIATELY, don't wait
+                    // CRITICAL FIX: Process SYNCHRONOUSLY (no setTimeout!)
+                    console.log('→ Calling processQRCode NOW...');
                     processQRCode(decodedText);
                 },
                 (errorMessage) => {
@@ -1051,7 +1049,7 @@
                 window.IS_SWITCHING = true;
                 console.log('🔄 TRIGGERING CLIENT MODE SWITCH...');
                 
-                // IMMEDIATE SWITCH - NO DELAY
+                // Call switch function
                 window.switchToClientAndConnect(scannedPeerId);
                 
             } catch (e) {
@@ -1157,14 +1155,13 @@
                 }
             }
 
-            // CRITICAL: Define switch function FIRST
+            // DEFINE SWITCH FUNCTION FIRST
             window.switchToClientAndConnect = function(targetPeerId) {
                 console.log('===================================');
                 console.log('🔄 SWITCHING TO CLIENT MODE');
                 console.log('Target Peer:', targetPeerId);
                 console.log('===================================');
                 
-                // PREVENT any peer init during this process
                 ALLOW_PEER_INIT = false;
                 
                 console.log('1️⃣ Hiding QR, showing connecting...');
@@ -1198,7 +1195,6 @@
                 
                 console.log('4️⃣ Creating new client peer...');
                 
-                // CRITICAL: Create peer with CLIENT flag
                 try {
                     peer = new Peer({
                         config: {
@@ -1277,9 +1273,8 @@
             }
 
             function initializePeer() {
-                // CRITICAL: Check if peer init is allowed
                 if (!ALLOW_PEER_INIT) {
-                    console.log('🚫 Peer init BLOCKED (scanner active or switching)');
+                    console.log('🚫 Peer init BLOCKED (scanner active)');
                     return;
                 }
                 
@@ -1810,7 +1805,6 @@
             
             downloadQrButton.addEventListener('click', downloadQRCode);
 
-            // START peer initialization
             initializePeer();
         });
     </script>

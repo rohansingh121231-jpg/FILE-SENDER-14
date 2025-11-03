@@ -1,0 +1,1743 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>QR Send - E2E Encrypted</title>
+    
+    <!-- ✅ ERUDA CONSOLE - Mobile Debugging -->
+    <script src="https://cdn.jsdelivr.net/npm/eruda"></script>
+    <script>eruda.init();</script>
+    <!-- ✅ End Eruda -->
+    
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/peerjs/1.5.4/peerjs.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+    <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
+    
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        :root {
+            --bg-primary: #ffffff;
+            --bg-secondary: #f8f9fa;
+            --bg-card: #ffffff;
+            --text-primary: #1a1a1a;
+            --text-secondary: #666666;
+            --accent: #4285f4;
+            --accent-hover: #3367d6;
+            --border: #e0e0e0;
+            --shadow: rgba(0, 0, 0, 0.1);
+            --success: #34a853;
+            --error: #ea4335;
+        }
+
+        body.dark-mode {
+            --bg-primary: #0f0f0f;
+            --bg-secondary: #1a1a1a;
+            --bg-card: #1e1e1e;
+            --text-primary: #e8e8e8;
+            --text-secondary: #b0b0b0;
+            --border: #333333;
+            --shadow: rgba(255, 255, 255, 0.05);
+        }
+
+        body {
+            font-family: 'Google Sans', 'Segoe UI', Roboto, sans-serif;
+            background: linear-gradient(135deg, var(--bg-primary) 0%, var(--bg-secondary) 100%);
+            color: var(--text-primary);
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 15px;
+            transition: all 0.3s ease;
+            position: relative;
+            overflow-x: hidden;
+        }
+
+        body::before {
+            content: '';
+            position: fixed;
+            top: -50%;
+            left: -50%;
+            width: 200%;
+            height: 200%;
+            background: radial-gradient(circle, var(--accent) 1px, transparent 1px);
+            background-size: 50px 50px;
+            opacity: 0.03;
+            animation: bgMove 20s linear infinite;
+            z-index: 0;
+        }
+
+        @keyframes bgMove {
+            0% { transform: translate(0, 0); }
+            100% { transform: translate(50px, 50px); }
+        }
+
+        .theme-toggle {
+            position: fixed;
+            top: 15px;
+            right: 15px;
+            width: 45px;
+            height: 45px;
+            background: var(--bg-card);
+            border: 2px solid var(--border);
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            z-index: 1000;
+            transition: all 0.3s ease;
+            box-shadow: 0 4px 12px var(--shadow);
+        }
+
+        .theme-toggle:hover {
+            transform: translateY(-2px) scale(1.05);
+            box-shadow: 0 8px 20px var(--shadow);
+        }
+
+        .theme-toggle svg {
+            width: 22px;
+            height: 22px;
+            fill: var(--text-primary);
+            transition: all 0.3s ease;
+        }
+
+        .watermark {
+            position: fixed;
+            bottom: 15px;
+            right: 15px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 4px;
+            opacity: 0.4;
+            z-index: 1000;
+            transition: opacity 0.3s ease;
+        }
+
+        .watermark:hover {
+            opacity: 0.8;
+        }
+
+        .e2e-icon {
+            width: 28px;
+            height: 28px;
+            animation: pulse 2s ease-in-out infinite;
+        }
+
+        @keyframes pulse {
+            0%, 100% { opacity: 0.4; transform: scale(1); }
+            50% { opacity: 1; transform: scale(1.1); }
+        }
+
+        .watermark-text {
+            font-size: 9px;
+            font-weight: 700;
+            letter-spacing: 1px;
+            color: var(--text-secondary);
+            text-transform: uppercase;
+        }
+
+        .container {
+            position: relative;
+            max-width: 450px;
+            width: 100%;
+            background: var(--bg-card);
+            border-radius: 20px;
+            box-shadow: 
+                0 10px 40px var(--shadow),
+                0 0 0 1px var(--border);
+            overflow: hidden;
+            transform-style: preserve-3d;
+            perspective: 1000px;
+            transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+            z-index: 1;
+            max-height: 95vh;
+            overflow-y: auto;
+        }
+
+        .container:hover {
+            transform: translateY(-5px);
+            box-shadow: 
+                0 20px 60px var(--shadow),
+                0 0 0 1px var(--border);
+        }
+
+        .container::-webkit-scrollbar {
+            width: 6px;
+        }
+
+        .container::-webkit-scrollbar-track {
+            background: var(--bg-secondary);
+        }
+
+        .container::-webkit-scrollbar-thumb {
+            background: var(--accent);
+            border-radius: 3px;
+        }
+
+        header {
+            background: linear-gradient(135deg, var(--accent) 0%, var(--accent-hover) 100%);
+            padding: 20px;
+            text-align: center;
+            position: relative;
+            overflow: hidden;
+        }
+
+        header::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: -100%;
+            width: 100%;
+            height: 100%;
+            background: linear-gradient(90deg, transparent, rgba(255,255,255,0.2), transparent);
+            animation: shimmer 3s infinite;
+        }
+
+        @keyframes shimmer {
+            0% { left: -100%; }
+            100% { left: 100%; }
+        }
+
+        h1 {
+            font-size: 22px;
+            font-weight: 600;
+            color: white;
+            margin-bottom: 6px;
+            letter-spacing: -0.5px;
+        }
+
+        #status {
+            font-size: 13px;
+            color: rgba(255,255,255,0.9);
+            font-weight: 500;
+        }
+
+        .connection-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0,0,0,0.85);
+            display: none;
+            align-items: center;
+            justify-content: center;
+            z-index: 9999;
+            backdrop-filter: blur(10px);
+        }
+
+        .connection-overlay.active {
+            display: flex;
+            animation: fadeIn 0.3s ease;
+        }
+
+        @keyframes fadeIn {
+            from { opacity: 0; }
+            to { opacity: 1; }
+        }
+
+        .lock-animation {
+            position: relative;
+            animation: lockBounce 1s ease-in-out;
+        }
+
+        @keyframes lockBounce {
+            0%, 100% { transform: scale(1); }
+            50% { transform: scale(1.2); }
+        }
+
+        .lock-svg {
+            width: 100px;
+            height: 100px;
+        }
+
+        .lock-body {
+            animation: lockClose 0.8s ease forwards;
+        }
+
+        @keyframes lockClose {
+            0% { opacity: 0; transform: translateY(20px); }
+            100% { opacity: 1; transform: translateY(0); }
+        }
+
+        .lock-shackle {
+            animation: shackleClose 0.8s ease forwards 0.3s;
+        }
+
+        @keyframes shackleClose {
+            0% { transform: translateY(-10px); opacity: 0; }
+            100% { transform: translateY(0); opacity: 1; }
+        }
+
+        .checkmark {
+            animation: checkmarkDraw 0.5s ease forwards 1s;
+        }
+
+        @keyframes checkmarkDraw {
+            0% { stroke-dashoffset: 100; opacity: 0; }
+            100% { stroke-dashoffset: 0; opacity: 1; }
+        }
+
+        main {
+            padding: 20px;
+        }
+
+        #qr-code-container {
+            text-align: center;
+        }
+
+        #qrcode {
+            display: inline-block;
+            padding: 15px;
+            background: white;
+            border-radius: 12px;
+            box-shadow: 0 4px 16px var(--shadow);
+            margin-bottom: 15px;
+            transition: transform 0.3s ease;
+        }
+
+        #qrcode:hover {
+            transform: scale(1.03);
+        }
+
+        #qrcode canvas,
+        #qrcode img {
+            max-width: 100%;
+            height: auto !important;
+            width: auto !important;
+        }
+
+        #qr-code-container p {
+            color: var(--text-secondary);
+            font-size: 13px;
+            margin-bottom: 12px;
+        }
+
+        #share-buttons-container {
+            display: flex;
+            gap: 8px;
+            justify-content: center;
+            flex-wrap: wrap;
+        }
+
+        .share-button {
+            padding: 10px 18px;
+            border: 2px solid var(--border);
+            background: var(--bg-card);
+            color: var(--text-primary);
+            border-radius: 10px;
+            font-weight: 600;
+            font-size: 13px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        .share-button:hover {
+            background: var(--accent);
+            color: white;
+            border-color: var(--accent);
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(66, 133, 244, 0.3);
+        }
+
+        .primary-share {
+            background: var(--accent);
+            color: white;
+            border-color: var(--accent);
+        }
+
+        .scanner-button {
+            background: var(--success);
+            color: white;
+            border-color: var(--success);
+        }
+
+        .scanner-button:hover {
+            background: #2d8e47;
+            border-color: #2d8e47;
+        }
+
+        .scanner-modal {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: #000000;
+            display: none;
+            flex-direction: column;
+            z-index: 10000;
+            padding: 0;
+        }
+
+        .scanner-modal.active {
+            display: flex;
+        }
+
+        .scanner-header {
+            background: rgba(0, 0, 0, 0.9);
+            padding: 15px 20px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            position: relative;
+            z-index: 10001;
+        }
+
+        .scanner-header h2 {
+            font-size: 18px;
+            color: white;
+            font-weight: 600;
+        }
+
+        .close-scanner {
+            background: var(--error);
+            color: white;
+            border: none;
+            width: 40px;
+            height: 40px;
+            border-radius: 50%;
+            cursor: pointer;
+            font-size: 22px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: all 0.3s ease;
+            font-weight: bold;
+        }
+
+        .close-scanner:hover {
+            background: #c82333;
+            transform: scale(1.1);
+        }
+
+        #qr-reader {
+            width: 100% !important;
+            height: calc(100vh - 70px) !important;
+            position: relative;
+            background: #000;
+        }
+
+        #qr-reader video {
+            width: 100% !important;
+            height: 100% !important;
+            object-fit: cover !important;
+            position: absolute !important;
+            top: 0 !important;
+            left: 0 !important;
+        }
+
+        #qr-reader__dashboard,
+        #qr-reader__dashboard_section {
+            display: none !important;
+        }
+
+        #qr-reader__scan_region {
+            width: 100% !important;
+            height: 100% !important;
+            position: relative !important;
+            border: none !important;
+        }
+
+        .scan-indicator {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            width: 80%;
+            max-width: 350px;
+            height: 80%;
+            max-height: 350px;
+            border: 3px solid var(--success);
+            border-radius: 20px;
+            z-index: 10000;
+            pointer-events: none;
+            box-shadow: 
+                0 0 0 2000px rgba(0, 0, 0, 0.5),
+                inset 0 0 30px rgba(52, 168, 83, 0.3);
+        }
+
+        .scan-line {
+            position: absolute;
+            width: 100%;
+            height: 3px;
+            background: linear-gradient(90deg, transparent, var(--success), transparent);
+            animation: scan 2s linear infinite;
+        }
+
+        @keyframes scan {
+            0% { top: 0; }
+            100% { top: 100%; }
+        }
+
+        .scan-corners {
+            position: absolute;
+            width: 100%;
+            height: 100%;
+        }
+
+        .corner {
+            position: absolute;
+            width: 30px;
+            height: 30px;
+            border: 4px solid var(--success);
+        }
+
+        .corner.top-left {
+            top: -3px;
+            left: -3px;
+            border-right: none;
+            border-bottom: none;
+            border-radius: 20px 0 0 0;
+        }
+
+        .corner.top-right {
+            top: -3px;
+            right: -3px;
+            border-left: none;
+            border-bottom: none;
+            border-radius: 0 20px 0 0;
+        }
+
+        .corner.bottom-left {
+            bottom: -3px;
+            left: -3px;
+            border-right: none;
+            border-top: none;
+            border-radius: 0 0 0 20px;
+        }
+
+        .corner.bottom-right {
+            bottom: -3px;
+            right: -3px;
+            border-left: none;
+            border-top: none;
+            border-radius: 0 0 20px 0;
+        }
+
+        .scan-instruction {
+            position: absolute;
+            bottom: 100px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: rgba(0, 0, 0, 0.8);
+            color: white;
+            padding: 15px 25px;
+            border-radius: 12px;
+            font-size: 16px;
+            font-weight: 600;
+            z-index: 10001;
+            text-align: center;
+            backdrop-filter: blur(10px);
+        }
+
+        #scan-instructions {
+            text-align: center;
+            animation: slideUp 0.5s ease;
+        }
+
+        @keyframes slideUp {
+            from { opacity: 0; transform: translateY(20px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        #scan-instructions p {
+            font-size: 16px;
+            color: var(--success);
+            font-weight: 600;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+        }
+
+        #scan-instructions p::before {
+            content: '🔒';
+            font-size: 20px;
+            animation: rotate 2s linear infinite;
+        }
+
+        @keyframes rotate {
+            from { transform: rotate(0deg); }
+            to { transform: rotate(360deg); }
+        }
+
+        .transfer-area {
+            padding: 20px;
+            background: var(--bg-secondary);
+            border-top: 1px solid var(--border);
+        }
+
+        .transfer-area h3 {
+            font-size: 16px;
+            font-weight: 600;
+            margin-bottom: 12px;
+            color: var(--text-primary);
+        }
+
+        #file-input {
+            width: 100%;
+            padding: 12px;
+            border: 2px dashed var(--border);
+            border-radius: 10px;
+            background: var(--bg-card);
+            color: var(--text-primary);
+            cursor: pointer;
+            transition: all 0.3s ease;
+            font-family: inherit;
+            font-size: 13px;
+        }
+
+        #file-input:hover {
+            border-color: var(--accent);
+            background: var(--accent);
+            color: white;
+        }
+
+        #transfer-status {
+            margin-top: 12px;
+            font-size: 13px;
+            color: var(--text-secondary);
+            text-align: center;
+        }
+
+        .progress-container {
+            margin-top: 15px;
+            padding: 15px;
+            background: var(--bg-card);
+            border-radius: 10px;
+            box-shadow: 0 2px 8px var(--shadow);
+            display: none;
+        }
+
+        .progress-label {
+            font-size: 13px;
+            font-weight: 600;
+            color: var(--text-primary);
+            margin-bottom: 12px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+
+        .progress-bar-background {
+            position: relative;
+            width: 100%;
+            height: 35px;
+            background: var(--bg-secondary);
+            border-radius: 18px;
+            overflow: visible;
+            box-shadow: inset 0 2px 4px var(--shadow);
+        }
+
+        .progress-bar {
+            height: 100%;
+            background: linear-gradient(90deg, var(--accent) 0%, var(--success) 100%);
+            border-radius: 18px;
+            transition: width 0.3s ease;
+            position: relative;
+            box-shadow: 0 2px 8px rgba(66, 133, 244, 0.3);
+        }
+
+        .delivery-boy {
+            position: absolute;
+            right: -45px;
+            top: 50%;
+            transform: translateY(-50%);
+            width: 35px;
+            height: 35px;
+            transition: right 0.3s ease;
+            z-index: 10;
+        }
+
+        .delivery-boy svg {
+            width: 100%;
+            height: 100%;
+            animation: bounce 0.5s ease-in-out infinite;
+        }
+
+        @keyframes bounce {
+            0%, 100% { transform: translateY(0); }
+            50% { transform: translateY(-4px); }
+        }
+
+        .progress-stats {
+            display: flex;
+            justify-content: space-between;
+            margin-top: 8px;
+            font-size: 11px;
+            color: var(--text-secondary);
+        }
+
+        #cancel-button {
+            margin-top: 12px;
+            width: 100%;
+            padding: 10px;
+            background: var(--error);
+            color: white;
+            border: none;
+            border-radius: 8px;
+            font-weight: 600;
+            font-size: 13px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+
+        #cancel-button:hover {
+            background: #d33828;
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(234, 67, 53, 0.3);
+        }
+
+        .switch-mode-button {
+            margin-top: 12px;
+            width: 100%;
+            padding: 12px;
+            background: linear-gradient(135deg, #ffc107 0%, #ff9800 100%);
+            color: #000;
+            border: none;
+            border-radius: 10px;
+            font-weight: 700;
+            font-size: 14px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            box-shadow: 0 4px 12px rgba(255, 193, 7, 0.3);
+        }
+
+        .switch-mode-button:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 8px 20px rgba(255, 193, 7, 0.4);
+        }
+
+        @media (max-width: 600px) {
+            body {
+                padding: 10px;
+            }
+
+            .container {
+                border-radius: 16px;
+                max-height: 98vh;
+            }
+
+            h1 {
+                font-size: 20px;
+            }
+
+            #status {
+                font-size: 12px;
+            }
+
+            .theme-toggle {
+                width: 40px;
+                height: 40px;
+                top: 10px;
+                right: 10px;
+            }
+
+            .scan-indicator {
+                width: 85%;
+                height: 85%;
+            }
+
+            .scan-instruction {
+                bottom: 80px;
+                font-size: 14px;
+                padding: 12px 20px;
+            }
+        }
+
+        @media (min-width: 601px) and (max-width: 1024px) {
+            .container {
+                max-width: 420px;
+            }
+
+            #qrcode canvas,
+            #qrcode img {
+                max-width: 220px !important;
+            }
+        }
+
+        @media (min-width: 1025px) {
+            #qrcode canvas,
+            #qrcode img {
+                max-width: 200px !important;
+            }
+        }
+    </style>
+</head>
+<body>
+
+    <div class="theme-toggle" onclick="toggleTheme()">
+        <svg id="theme-icon-light" viewBox="0 0 24 24" style="display: none;">
+            <path d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z" stroke="currentColor" stroke-width="2" stroke-linecap="round" fill="none"/>
+        </svg>
+        <svg id="theme-icon-dark" viewBox="0 0 24 24">
+            <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" fill="currentColor"/>
+        </svg>
+    </div>
+
+    <div class="watermark">
+        <svg class="e2e-icon" viewBox="0 0 24 24" fill="currentColor">
+            <path d="M18 8h-1V6c0-2.76-2.24-5-5-5S7 3.24 7 6v2H6c-1.1 0-2 .9-2 2v10c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V10c0-1.1-.9-2-2-2zm-6 9c-1.1 0-2-.9-2-2s.9-2 2-2 2 .9 2 2-.9 2-2 2zm3.1-9H8.9V6c0-1.71 1.39-3.1 3.1-3.1 1.71 0 3.1 1.39 3.1 3.1v2z"/>
+        </svg>
+        <span class="watermark-text">Anonymous</span>
+    </div>
+
+    <div class="connection-overlay" id="connection-overlay">
+        <div class="lock-animation">
+            <svg class="lock-svg" viewBox="0 0 100 100">
+                <defs>
+                    <linearGradient id="lockGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+                        <stop offset="0%" style="stop-color:#4285f4;stop-opacity:1" />
+                        <stop offset="100%" style="stop-color:#34a853;stop-opacity:1" />
+                    </linearGradient>
+                </defs>
+                <rect class="lock-body" x="30" y="45" width="40" height="35" rx="5" fill="url(#lockGradient)"/>
+                <path class="lock-shackle" d="M35 45 V35 C35 25 40 20 50 20 C60 20 65 25 65 35 V45" 
+                      stroke="url(#lockGradient)" stroke-width="5" fill="none" stroke-linecap="round"/>
+                <circle cx="50" cy="60" r="4" fill="white"/>
+                <rect x="48" y="60" width="4" height="8" fill="white"/>
+                <polyline class="checkmark" points="40,62 47,69 62,54" 
+                          stroke="#34a853" stroke-width="4" fill="none" 
+                          stroke-linecap="round" stroke-linejoin="round"
+                          stroke-dasharray="100" stroke-dashoffset="100"/>
+            </svg>
+            <p style="color: white; margin-top: 15px; font-size: 16px; font-weight: 600;">
+                🔐 E2E Encrypted Connection
+            </p>
+        </div>
+    </div>
+
+    <div class="scanner-modal" id="scanner-modal">
+        <div class="scanner-header">
+            <h2>📷 Scan QR Code</h2>
+            <button class="close-scanner" onclick="closeScanner()">✕</button>
+        </div>
+        <div id="qr-reader"></div>
+        
+        <div class="scan-indicator">
+            <div class="scan-line"></div>
+            <div class="scan-corners">
+                <div class="corner top-left"></div>
+                <div class="corner top-right"></div>
+                <div class="corner bottom-left"></div>
+                <div class="corner bottom-right"></div>
+            </div>
+        </div>
+        
+        <div class="scan-instruction">
+            📱 Point camera at QR code
+        </div>
+    </div>
+
+    <div class="container">
+        <header>
+            <h1>QR Send Pro</h1>
+            <div id="status">Starting...</div>
+        </header>
+        
+        <main>
+            <div id="qr-code-container">
+                <div id="qrcode"></div>
+                <p>Scan QR code to connect securely</p>
+                
+                <div id="share-buttons-container">
+                    <button id="native-share-button" class="share-button primary-share" style="display: none;">📤 Share</button>
+                    <button id="copy-link-button" class="share-button">📋 Copy</button>
+                    <button id="download-qr-button" class="share-button">💾 Save</button>
+                    <button id="scan-qr-button" class="share-button scanner-button" onclick="openScanner()">📷 Scan</button>
+                </div>
+            </div>
+
+            <div id="scan-instructions" style="display:none;">
+                <p>✅ Connected Securely!</p>
+            </div>
+        </main>
+
+        <div class="transfer-area">
+            <h3>📁 Send Files</h3>
+            <input type="file" id="file-input" disabled multiple>
+            <div id="transfer-status">Waiting...</div>
+
+            <div id="progress-container" class="progress-container">
+                <div class="progress-label">
+                    <span>Sending...</span>
+                    <span id="progress-percentage">0%</span>
+                </div>
+                <div class="progress-bar-background">
+                    <div id="progress-bar" class="progress-bar">
+                        <div class="delivery-boy" id="delivery-boy">
+                            <svg viewBox="0 0 64 64">
+                                <circle cx="20" cy="45" r="8" fill="#333"/>
+                                <circle cx="44" cy="45" r="8" fill="#333"/>
+                                <path d="M10 35 L20 35 L25 25 L45 25 L50 35 L54 35 L54 45 L10 45 Z" fill="#4285f4"/>
+                                <rect x="30" y="20" width="15" height="10" fill="#ea4335" rx="2"/>
+                                <circle cx="37" cy="15" r="5" fill="#fbbc04"/>
+                            </svg>
+                        </div>
+                    </div>
+                </div>
+                <div class="progress-stats">
+                    <span id="progress-size">0 MB / 0 MB</span>
+                    <span id="progress-eta">ETA: --:--</span>
+                </div>
+                <button id="cancel-button">❌ Cancel</button>
+            </div>
+            
+            <div id="receive-progress-container" class="progress-container">
+                <div class="progress-label">
+                    <span>Receiving...</span>
+                    <span id="receive-progress-percentage">0%</span>
+                </div>
+                <div class="progress-bar-background">
+                    <div id="receive-progress-bar" class="progress-bar"></div>
+                </div>
+                <div class="progress-stats">
+                    <span id="receive-progress-size">0 MB / 0 MB</span>
+                    <span>🔐 Encrypted</span>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        function toggleTheme() {
+            document.body.classList.toggle('dark-mode');
+            const isDark = document.body.classList.contains('dark-mode');
+            document.getElementById('theme-icon-light').style.display = isDark ? 'block' : 'none';
+            document.getElementById('theme-icon-dark').style.display = isDark ? 'none' : 'block';
+            localStorage.setItem('theme', isDark ? 'dark' : 'light');
+        }
+
+        if (localStorage.getItem('theme') === 'dark') {
+            toggleTheme();
+        }
+
+        let html5QrCode = null;
+        let isScanning = false;
+
+        window.APP_PEER = null;
+        window.APP_CONNECTION = null;
+        window.IS_SWITCHING = false;
+
+        function openScanner() {
+            console.log('📷 Opening scanner...');
+            document.getElementById('scanner-modal').classList.add('active');
+            document.body.style.overflow = 'hidden';
+            startScanner();
+        }
+
+        function closeScanner() {
+            console.log('❌ Closing scanner...');
+            document.getElementById('scanner-modal').classList.remove('active');
+            document.body.style.overflow = '';
+            stopScanner();
+        }
+
+        function startScanner() {
+            if (html5QrCode || isScanning) {
+                console.log('⚠ Scanner already running');
+                return;
+            }
+            isScanning = true;
+            console.log('🎥 Starting camera...');
+
+            html5QrCode = new Html5Qrcode("qr-reader");
+            
+            const config = {
+                fps: 30,
+                qrbox: function(viewfinderWidth, viewfinderHeight) {
+                    let minDimension = Math.min(viewfinderWidth, viewfinderHeight);
+                    let qrboxSize = Math.floor(minDimension * 0.8);
+                    return { width: qrboxSize, height: qrboxSize };
+                },
+                aspectRatio: 1.0,
+                disableFlip: false
+            };
+            
+            html5QrCode.start(
+                { facingMode: "environment" },
+                config,
+                (decodedText) => {
+                    console.log('✓✓✓ QR SCANNED:', decodedText);
+                    
+                    if (navigator.vibrate) {
+                        navigator.vibrate(200);
+                    }
+                    
+                    stopScanner();
+                    closeScanner();
+                    
+                    try {
+                        const url = new URL(decodedText);
+                        const scannedPeerId = url.hash.substring(1);
+                        
+                        console.log('🎯 Extracted Peer ID:', scannedPeerId);
+                        
+                        if (scannedPeerId && !window.IS_SWITCHING) {
+                            window.IS_SWITCHING = true;
+                            console.log('🔄 TRIGGERING CLIENT MODE SWITCH...');
+                            
+                            if (window.switchToClientAndConnect) {
+                                window.switchToClientAndConnect(scannedPeerId);
+                            } else {
+                                console.error('❌ Switch function not found!');
+                                alert('Error: Cannot switch to client mode');
+                                window.IS_SWITCHING = false;
+                            }
+                        } else if (!scannedPeerId) {
+                            console.error('❌ Invalid peer ID');
+                            alert('Invalid QR code format');
+                        } else {
+                            console.log('⚠ Already switching...');
+                        }
+                    } catch (e) {
+                        console.error('❌ QR parse error:', e);
+                        alert('Invalid QR code');
+                        window.IS_SWITCHING = false;
+                    }
+                },
+                (errorMessage) => {
+                    // Silent
+                }
+            ).catch((err) => {
+                console.error('❌ Scanner error:', err);
+                isScanning = false;
+                alert('Camera error: ' + err.name);
+                closeScanner();
+            });
+        }
+
+        function stopScanner() {
+            if (html5QrCode && isScanning) {
+                console.log('🛑 Stopping scanner...');
+                html5QrCode.stop().then(() => {
+                    html5QrCode.clear();
+                    html5QrCode = null;
+                    isScanning = false;
+                    console.log('✓ Scanner stopped');
+                }).catch((err) => {
+                    console.error('Stop error:', err);
+                    isScanning = false;
+                });
+            }
+        }
+
+        function showConnectionAnimation() {
+            const overlay = document.getElementById('connection-overlay');
+            overlay.classList.add('active');
+            setTimeout(() => {
+                overlay.classList.remove('active');
+            }, 2000);
+        }
+
+        function updateDeliveryBoy(percent) {
+            const deliveryBoy = document.getElementById('delivery-boy');
+            if (deliveryBoy) {
+                const position = (percent / 100) * 100;
+                deliveryBoy.style.right = `${-45 + position}%`;
+            }
+        }
+
+        document.addEventListener('DOMContentLoaded', () => {
+            console.log('🚀 App initialized');
+            
+            const statusEl = document.getElementById('status');
+            const qrCodeContainer = document.getElementById('qr-code-container');
+            const qrEl = document.getElementById('qrcode');
+            const scanInstructions = document.getElementById('scan-instructions');
+            const fileInput = document.getElementById('file-input');
+            const transferStatusEl = document.getElementById('transfer-status');
+            const shareButtonsContainer = document.getElementById('share-buttons-container');
+
+            const nativeShareButton = document.getElementById('native-share-button');
+            const copyLinkButton = document.getElementById('copy-link-button');
+            const downloadQrButton = document.getElementById('download-qr-button');
+            
+            const progressContainer = document.getElementById('progress-container');
+            const progressBar = document.getElementById('progress-bar');
+            const progressPercentage = document.getElementById('progress-percentage');
+            const progressSize = document.getElementById('progress-size');
+            const progressEta = document.getElementById('progress-eta');
+            const cancelButton = document.getElementById('cancel-button');
+            
+            const receiveProgressContainer = document.getElementById('receive-progress-container');
+            const receiveProgressBar = document.getElementById('receive-progress-bar');
+            const receiveProgressPercentage = document.getElementById('receive-progress-percentage');
+            const receiveProgressSize = document.getElementById('receive-progress-size');
+
+            const CHUNK_SIZE = 64 * 1024;
+
+            let peer = null;
+            let currentConnection = null;
+            let myId = '';
+            let connectUrl = '';
+            let isHost = false;
+            let connectionRetryCount = 0;
+            const MAX_RETRY = 3;
+            
+            let fileQueue = [];
+            let isSending = false;
+            let isReceiving = false;
+            let cancelTransfer = false;
+            let hasActiveTransfer = false;
+            let heartbeatInterval = null;
+            
+            window.addEventListener('beforeunload', (event) => {
+                if (hasActiveTransfer || isSending || isReceiving) {
+                    const warningText = 'Transfer active!';
+                    event.preventDefault();
+                    event.returnValue = warningText;
+                    return warningText;
+                }
+            });
+
+            function clearHashFromUrl() {
+                const uri = window.location.toString();
+                if (uri.indexOf("#") > 0) {
+                    const cleanUri = uri.substring(0, uri.indexOf("#"));
+                    window.history.replaceState({}, document.title, cleanUri);
+                }
+            }
+
+            window.switchToClientAndConnect = function(targetPeerId) {
+                console.log('===================================');
+                console.log('🔄 SWITCHING TO CLIENT MODE');
+                console.log('Target Peer:', targetPeerId);
+                console.log('===================================');
+                
+                console.log('1️⃣ Hiding QR, showing connecting...');
+                qrCodeContainer.style.display = 'none';
+                shareButtonsContainer.style.display = 'none';
+                scanInstructions.style.display = 'none';
+                statusEl.textContent = '🔗 Connecting to peer...';
+                transferStatusEl.textContent = 'Connecting...';
+                
+                console.log('2️⃣ Destroying old peer...');
+                if (peer && !peer.destroyed) {
+                    try {
+                        peer.destroy();
+                        console.log('✓ Peer destroyed');
+                    } catch (e) {
+                        console.error('Peer destroy error:', e);
+                    }
+                }
+                
+                if (currentConnection) {
+                    try {
+                        currentConnection.close();
+                    } catch (e) {}
+                    currentConnection = null;
+                }
+                window.APP_CONNECTION = null;
+                
+                isHost = false;
+                connectionRetryCount = 0;
+                console.log('3️⃣ Mode set to CLIENT');
+                
+                console.log('4️⃣ Creating new client peer...');
+                setTimeout(() => {
+                    try {
+                        peer = new Peer({
+                            config: {
+                                iceServers: [
+                                    { urls: 'stun:stun.l.google.com:19302' },
+                                    { 
+                                        urls: 'turn:openrelay.metered.ca:80',
+                                        username: 'openrelayproject',
+                                        credential: 'openrelayproject'
+                                    }
+                                ],
+                                sdpSemantics: 'unified-plan'
+                            },
+                            debug: 1
+                        });
+                        
+                        window.APP_PEER = peer;
+                        console.log('✓ New peer created');
+                        
+                        peer.on('open', (newMyId) => {
+                            console.log('✓✓ New Peer ID:', newMyId);
+                            myId = newMyId;
+                            
+                            console.log('5️⃣ Connecting to target:', targetPeerId);
+                            attemptConnection(targetPeerId);
+                        });
+                        
+                        peer.on('error', (err) => {
+                            console.error('❌ Client peer error:', err.type);
+                            if (err.type === 'peer-unavailable') {
+                                if (connectionRetryCount < MAX_RETRY) {
+                                    connectionRetryCount++;
+                                    statusEl.textContent = `🔄 Retry ${connectionRetryCount}`;
+                                    setTimeout(() => attemptConnection(targetPeerId), 2000);
+                                } else {
+                                    statusEl.textContent = '❌ Not found';
+                                    showSwitchButton();
+                                    window.IS_SWITCHING = false;
+                                }
+                            } else {
+                                window.IS_SWITCHING = false;
+                            }
+                        });
+                        
+                    } catch (e) {
+                        console.error('❌ Failed to create peer:', e);
+                        statusEl.textContent = '❌ Error';
+                        window.IS_SWITCHING = false;
+                    }
+                }, 500);
+            };
+
+            function switchToHostMode(reason) {
+                console.log('→ Switch to host:', reason);
+                clearHashFromUrl();
+                
+                if (peer && !peer.destroyed) {
+                    try { peer.destroy(); } catch (e) {}
+                }
+                
+                currentConnection = null;
+                window.APP_CONNECTION = null;
+                connectionRetryCount = 0;
+                isHost = true;
+                statusEl.textContent = '🔄 Creating QR...';
+                
+                setTimeout(() => initializePeer(), 1000);
+            }
+
+            function initializePeer() {
+                console.log('🔧 Initializing peer...');
+                try {
+                    peer = new Peer({
+                        config: {
+                            iceServers: [
+                                { urls: 'stun:stun.l.google.com:19302' },
+                                { 
+                                    urls: 'turn:openrelay.metered.ca:80',
+                                    username: 'openrelayproject',
+                                    credential: 'openrelayproject'
+                                }
+                            ],
+                            sdpSemantics: 'unified-plan'
+                        },
+                        debug: 1
+                    });
+                    
+                    window.APP_PEER = peer;
+                    
+                } catch (e) {
+                    console.error('❌ Init error:', e);
+                    statusEl.textContent = '❌ Error';
+                    return;
+                }
+
+                peer.on('open', (id) => {
+                    myId = id;
+                    console.log('✓ Peer ID:', id);
+                    const targetId = window.location.hash.substring(1);
+
+                    if (targetId && !isHost) {
+                        console.log('→ CLIENT MODE');
+                        isHost = false;
+                        statusEl.textContent = '🔗 Connecting...';
+                        attemptConnection(targetId);
+                    } else {
+                        console.log('→ HOST MODE');
+                        isHost = true;
+                        qrCodeContainer.style.display = 'block';
+                        scanInstructions.style.display = 'none';
+                        
+                        connectUrl = `${window.location.origin}${window.location.pathname}#${myId}`;
+                        qrEl.innerHTML = '';
+                        
+                        new QRCode(qrEl, {
+                            text: connectUrl,
+                            width: 256,
+                            height: 256,
+                            colorDark: "#000000",
+                            colorLight: "#ffffff",
+                            correctLevel: QRCode.CorrectLevel.H
+                        });
+                        
+                        shareButtonsContainer.style.display = 'flex';
+                        setTimeout(setupShareButton, 100);
+                        statusEl.textContent = '✅ Ready';
+                    }
+                });
+
+                peer.on('connection', (conn) => {
+                    console.log('📡 Incoming connection');
+                    if (currentConnection) {
+                        conn.close();
+                        return;
+                    }
+                    
+                    statusEl.textContent = '📡 Incoming...';
+                    
+                    if (conn.open) {
+                        setupConnection(conn);
+                    } else {
+                        conn.on('open', () => setupConnection(conn));
+                    }
+                });
+
+                peer.on('error', (err) => {
+                    console.error('❌ Peer error:', err.type);
+                    if (err.type === 'peer-unavailable') {
+                        if (!isHost && connectionRetryCount < MAX_RETRY) {
+                            connectionRetryCount++;
+                            statusEl.textContent = `🔄 Retry ${connectionRetryCount}`;
+                            setTimeout(() => {
+                                const targetId = window.location.hash.substring(1);
+                                if (targetId) attemptConnection(targetId);
+                            }, 2000);
+                        } else if (!isHost) {
+                            statusEl.textContent = '❌ Not found';
+                            showSwitchButton();
+                        }
+                    }
+                });
+            }
+
+            function showSwitchButton() {
+                if (document.getElementById('switch-mode-btn')) return;
+                
+                const btn = document.createElement('button');
+                btn.id = 'switch-mode-btn';
+                btn.textContent = '🔄 Generate QR';
+                btn.className = 'switch-mode-button';
+                btn.onclick = () => {
+                    btn.remove();
+                    switchToHostMode('User requested');
+                };
+                document.querySelector('.transfer-area').appendChild(btn);
+            }
+
+            function attemptConnection(targetId) {
+                console.log('→ Attempting connection to:', targetId);
+                let connectionFailed = false;
+                let connectionTimer = null;
+                
+                const handleFailure = (message) => {
+                    if (connectionFailed) return;
+                    connectionFailed = true;
+                    if (connectionTimer) clearTimeout(connectionTimer);
+                    console.error('❌ Connection failed:', message);
+                    
+                    if (connectionRetryCount < MAX_RETRY) {
+                        connectionRetryCount++;
+                        statusEl.textContent = `🔄 Retry ${connectionRetryCount}`;
+                        setTimeout(() => attemptConnection(targetId), 2000);
+                    } else {
+                        statusEl.textContent = '❌ Failed';
+                        showSwitchButton();
+                        window.IS_SWITCHING = false;
+                    }
+                };
+
+                try {
+                    connectionTimer = setTimeout(() => handleFailure('Timeout'), 20000);
+                    
+                    const conn = peer.connect(targetId, { 
+                        reliable: true,
+                        serialization: 'binary'
+                    });
+
+                    conn.on('open', () => {
+                        console.log('✓✓✓ CONNECTION OPENED!');
+                        clearTimeout(connectionTimer);
+                        if (!connectionFailed) {
+                            connectionRetryCount = 0;
+                            window.IS_SWITCHING = false;
+                            setupConnection(conn);
+                        }
+                    });
+
+                    conn.on('error', (err) => {
+                        console.error('❌ Connection error:', err);
+                        handleFailure('Error');
+                    });
+                    
+                    conn.on('close', () => {
+                        console.log('⚠ Connection closed early');
+                        if (!currentConnection) handleFailure('Closed');
+                    });
+                } catch (e) {
+                    console.error('❌ Connect exception:', e);
+                    handleFailure('Failed');
+                }
+            }
+
+            function setupConnection(conn) {
+                console.log('✓ Setup connection');
+                currentConnection = conn;
+                window.APP_CONNECTION = conn;
+                showConnectionAnimation();
+                
+                statusEl.textContent = '🔐 Connected!';
+                fileInput.disabled = false;
+                transferStatusEl.textContent = '✅ Ready';
+                qrCodeContainer.style.display = 'none';
+                shareButtonsContainer.style.display = 'none';
+                scanInstructions.style.display = 'block';
+                
+                const switchBtn = document.getElementById('switch-mode-btn');
+                if (switchBtn) switchBtn.remove();
+                
+                if (isHost) startHeartbeat();
+                
+                let incomingFileData = [];
+                let fileMetadata = {};
+                let receivedBytes = 0;
+
+                setTimeout(() => {
+                    if (currentConnection && currentConnection.open) {
+                        currentConnection.send({ type: 'ready' });
+                    }
+                }, 100);
+
+                conn.on('data', (data) => {
+                    if (data.type === 'ready') {
+                        statusEl.textContent = '✅ Ready!';
+                        return;
+                    }
+                    
+                    if (data.type === 'heartbeat-ping') {
+                        conn.send({ type: 'heartbeat-pong' });
+                        return;
+                    }
+                    
+                    if (data.type === 'heartbeat-pong') return;
+
+                    if (data.type === 'metadata') {
+                        fileMetadata = data;
+                        incomingFileData = [];
+                        receivedBytes = 0;
+                        isReceiving = true;
+                        hasActiveTransfer = true;
+                        
+                        transferStatusEl.textContent = `📥 ${fileMetadata.name}`;
+                        receiveProgressContainer.style.display = 'block';
+                        receiveProgressBar.style.width = '0%';
+                        receiveProgressPercentage.textContent = '0%';
+                        receiveProgressSize.textContent = `0 / ${formatBytes(fileMetadata.size)}`;
+                    } else if (data.type === 'end') {
+                        const fileBlob = new Blob(incomingFileData, { type: fileMetadata.type });
+                        const downloadUrl = URL.createObjectURL(fileBlob);
+                        const a = document.createElement('a');
+                        a.href = downloadUrl;
+                        a.download = fileMetadata.name;
+                        document.body.appendChild(a);
+                        a.click();
+                        a.remove();
+                        setTimeout(() => URL.revokeObjectURL(downloadUrl), 100);
+                        
+                        transferStatusEl.textContent = `✅ Received`;
+                        receiveProgressContainer.style.display = 'none';
+                        isReceiving = false;
+                        hasActiveTransfer = false;
+                        incomingFileData = [];
+                    } else if (data.type === 'cancel') {
+                        transferStatusEl.textContent = '❌ Cancelled';
+                        incomingFileData = [];
+                        receiveProgressContainer.style.display = 'none';
+                        isReceiving = false;
+                        hasActiveTransfer = false;
+                    } else {
+                        incomingFileData.push(data);
+                        receivedBytes += data.byteLength;
+                        
+                        const percent = Math.round((receivedBytes / fileMetadata.size) * 100);
+                        receiveProgressBar.style.width = `${percent}%`;
+                        receiveProgressPercentage.textContent = `${percent}%`;
+                        receiveProgressSize.textContent = `${formatBytes(receivedBytes)} / ${formatBytes(fileMetadata.size)}`;
+                    }
+                });
+
+                conn.on('close', () => handleDisconnect('Closed'));
+                conn.on('error', () => handleDisconnect('Error'));
+                
+                if (fileQueue.length > 0 && !isSending) {
+                    setTimeout(() => sendNextFileFromQueue(), 500);
+                }
+            }
+            
+            function startHeartbeat() {
+                stopHeartbeat();
+                heartbeatInterval = setInterval(() => {
+                    if (currentConnection && currentConnection.open) {
+                        try {
+                            currentConnection.send({ type: 'heartbeat-ping' });
+                        } catch (e) {}
+                    }
+                }, 5000);
+            }
+
+            function stopHeartbeat() {
+                if (heartbeatInterval) {
+                    clearInterval(heartbeatInterval);
+                    heartbeatInterval = null;
+                }
+            }
+            
+            function handleDisconnect(message) {
+                console.log('⚠ Disconnect:', message);
+                stopHeartbeat();
+                if (!currentConnection && !peer) return;
+                
+                statusEl.textContent = '⚠️ Disconnected';
+                transferStatusEl.textContent = 'Not connected';
+                fileInput.disabled = true;
+                
+                if (currentConnection) {
+                    try { currentConnection.close(); } catch (e) {}
+                    currentConnection = null;
+                    window.APP_CONNECTION = null;
+                }
+                
+                isSending = false;
+                isReceiving = false;
+                hasActiveTransfer = false;
+                fileQueue = [];
+                progressContainer.style.display = 'none';
+                receiveProgressContainer.style.display = 'none';
+                
+                setTimeout(() => switchToHostMode('Disconnected'), 1500);
+            }
+
+            fileInput.addEventListener('change', (event) => {
+                for (const file of event.target.files) {
+                    fileQueue.push(file);
+                }
+                event.target.value = null;
+                transferStatusEl.textContent = `📁 ${fileQueue.length} queued`;
+                
+                if (currentConnection && currentConnection.open && !isSending) {
+                    sendNextFileFromQueue();
+                }
+            });
+
+            function sendNextFileFromQueue() {
+                if (fileQueue.length === 0) {
+                    isSending = false;
+                    hasActiveTransfer = false;
+                    transferStatusEl.textContent = '✅ All sent!';
+                    return;
+                }
+                
+                if (!currentConnection || !currentConnection.open || isSending) return;
+                
+                isSending = true;
+                hasActiveTransfer = true;
+                cancelTransfer = false;
+                const file = fileQueue.shift();
+                
+                transferStatusEl.textContent = `📤 ${file.name}`;
+                progressContainer.style.display = 'block';
+                
+                const startTime = Date.now();
+
+                try {
+                    currentConnection.send({
+                        type: 'metadata',
+                        name: file.name,
+                        size: file.size,
+                        fileType: file.type
+                    });
+                } catch (e) {
+                    handleDisconnect('Send failed');
+                    return;
+                }
+
+                let offset = 0;
+                const reader = new FileReader();
+
+                reader.onload = (e) => {
+                    if (cancelTransfer) {
+                        isSending = false;
+                        hasActiveTransfer = false;
+                        fileQueue = [];
+                        progressContainer.style.display = 'none';
+                        transferStatusEl.textContent = '❌ Cancelled';
+                        if(currentConnection && currentConnection.open) {
+                             try {
+                                 currentConnection.send({ type: 'cancel' });
+                             } catch (err) {}
+                        }
+                        return;
+                    }
+                    
+                    if(!currentConnection || !currentConnection.open) {
+                        isSending = false;
+                        hasActiveTransfer = false;
+                        handleDisconnect('Lost');
+                        return;
+                    }
+                
+                    try {
+                        currentConnection.send(e.target.result);
+                        offset += e.target.result.byteLength;
+                        updateProgress(offset, file.size, startTime);
+
+                        if (offset < file.size) {
+                            readSlice(offset);
+                        } else {
+                            currentConnection.send({ type: 'end' });
+                            isSending = false;
+                            progressContainer.style.display = 'none';
+                            sendNextFileFromQueue();
+                        }
+                    } catch (err) {
+                        handleDisconnect('Error');
+                    }
+                };
+                
+                reader.onerror = (e) => {
+                    isSending = false;
+                    hasActiveTransfer = false;
+                    transferStatusEl.textContent = '❌ Read error';
+                    progressContainer.style.display = 'none';
+                };
+
+                function readSlice(o) {
+                    const slice = file.slice(o, o + CHUNK_SIZE);
+                    reader.readAsArrayBuffer(slice);
+                }
+                
+                readSlice(0);
+            }
+            
+            function updateProgress(sentBytes, totalBytes, startTime) {
+                const percent = Math.round((sentBytes / totalBytes) * 100);
+                progressBar.style.width = `${percent}%`;
+                progressPercentage.textContent = `${percent}%`;
+                progressSize.textContent = `${formatBytes(sentBytes)} / ${formatBytes(totalBytes)}`;
+                updateDeliveryBoy(percent);
+                
+                const elapsedTime = (Date.now() - startTime) / 1000;
+                if (elapsedTime > 0.5) {
+                    const speed = sentBytes / elapsedTime;
+                    const remainingBytes = totalBytes - sentBytes;
+                    const remainingTime = remainingBytes / speed;
+                    progressEta.textContent = `ETA: ${formatTime(remainingTime)}`;
+                }
+            }
+
+            function formatBytes(bytes, decimals = 2) {
+                if (bytes === 0) return '0 B';
+                const k = 1024;
+                const dm = decimals < 0 ? 0 : decimals;
+                const sizes = ['B', 'KB', 'MB', 'GB'];
+                const i = Math.floor(Math.log(bytes) / Math.log(k));
+                return parseFloat((bytes / Math.pow(k, i)).toFixed(dm)) + ' ' + sizes[i];
+            }
+            
+            function formatTime(seconds) {
+                if (seconds === Infinity || isNaN(seconds)) return '--:--';
+                const min = Math.floor(seconds / 60);
+                const sec = Math.floor(seconds % 60);
+                return `${min}:${sec < 10 ? '0' : ''}${sec}`;
+            }
+
+            cancelButton.addEventListener('click', () => {
+                cancelTransfer = true;
+            });
+
+            function setupShareButton() {
+                const canvas = qrEl.querySelector('canvas');
+                if (!canvas || typeof navigator.share === 'undefined') {
+                    nativeShareButton.style.display = 'none';
+                    copyLinkButton.style.display = 'inline-flex';
+                    downloadQrButton.style.display = 'inline-flex';
+                    return;
+                }
+
+                canvas.toBlob((blob) => {
+                    if (!blob) {
+                        nativeShareButton.style.display = 'none';
+                        copyLinkButton.style.display = 'inline-flex';
+                        downloadQrButton.style.display = 'inline-flex';
+                        return;
+                    }
+                    
+                    const file = new File([blob], 'qr-code.png', { type: 'image/png' });
+                    const shareData = {
+                        title: 'QR Send',
+                        text: 'Scan to connect',
+                        url: connectUrl,
+                        files: [file]
+                    };
+
+                    if (navigator.canShare && navigator.canShare(shareData)) {
+                        nativeShareButton.style.display = 'inline-flex';
+                        copyLinkButton.style.display = 'none';
+                        downloadQrButton.style.display = 'none';
+                        nativeShareButton.onclick = async () => {
+                            try {
+                                await navigator.share(shareData);
+                            } catch (err) {}
+                        };
+                    } else {
+                        nativeShareButton.style.display = 'none';
+                        copyLinkButton.style.display = 'inline-flex';
+                        downloadQrButton.style.display = 'inline-flex';
+                    }
+                }, 'image/png');
+            }
+
+            function copyToClipboard(text, element) {
+                const textarea = document.createElement('textarea');
+                textarea.value = text;
+                document.body.appendChild(textarea);
+                textarea.select();
+                try {
+                    document.execCommand('copy');
+                    if(element) {
+                        const originalText = element.textContent;
+                        element.textContent = '✅ Copied!';
+                        setTimeout(() => {
+                            element.textContent = originalText;
+                        }, 1500);
+                    }
+                } catch (err) {}
+                document.body.removeChild(textarea);
+            }
+            
+            function downloadQRCode() {
+                try {
+                    const canvas = qrEl.querySelector('canvas');
+                    if (canvas) {
+                        const dataUrl = canvas.toDataURL('image/png');
+                        const a = document.createElement('a');
+                        a.href = dataUrl;
+                        a.download = 'qr-send.png';
+                        document.body.appendChild(a);
+                        a.click();
+                        a.remove();
+                    }
+                } catch (e) {}
+            }
+
+            copyLinkButton.addEventListener('click', () => {
+                if (connectUrl) copyToClipboard(connectUrl, copyLinkButton);
+            });
+            
+            downloadQrButton.addEventListener('click', downloadQRCode);
+
+            initializePeer();
+        });
+    </script>
+</body>
+</html>

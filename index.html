@@ -925,7 +925,11 @@
 
         let html5QrCode = null;
         let isScanning = false;
-        let hasScanned = false; // CRITICAL FIX: Prevent multiple scans
+        let hasScanned = false;
+
+        // CRITICAL: Block peer init during scan
+        let ALLOW_PEER_INIT = true;
+        let PENDING_PEER_ID = null;
 
         window.APP_PEER = null;
         window.APP_CONNECTION = null;
@@ -933,7 +937,7 @@
 
         function openScanner() {
             console.log('📷 Opening scanner...');
-            hasScanned = false; // Reset flag
+            hasScanned = false;
             document.getElementById('scanner-modal').classList.add('active');
             document.body.style.overflow = 'hidden';
             startScanner();
@@ -971,9 +975,9 @@
                 { facingMode: "environment" },
                 config,
                 (decodedText) => {
-                    // CRITICAL FIX: Prevent multiple scans
+                    // CRITICAL FIX: Prevent multiple scans AND block peer init
                     if (hasScanned) {
-                        console.log('⚠ Already processed this scan, ignoring...');
+                        console.log('⚠ Already processed, ignoring...');
                         return;
                     }
                     hasScanned = true;
@@ -982,18 +986,19 @@
                     console.log('🔍 Type:', typeof decodedText);
                     console.log('🔍 Length:', decodedText.length);
                     
+                    // BLOCK PEER INIT IMMEDIATELY
+                    ALLOW_PEER_INIT = false;
+                    console.log('🚫 BLOCKED peer auto-init');
+                    
                     if (navigator.vibrate) {
                         navigator.vibrate(200);
                     }
                     
-                    // CRITICAL: Stop scanner BEFORE processing
                     stopScanner();
                     closeScanner();
                     
-                    // Small delay to ensure scanner is fully stopped
-                    setTimeout(() => {
-                        processQRCode(decodedText);
-                    }, 100);
+                    // Process IMMEDIATELY, don't wait
+                    processQRCode(decodedText);
                 },
                 (errorMessage) => {
                     // Silent
@@ -1006,47 +1011,39 @@
             });
         }
 
-        // CRITICAL FIX: Separate function for QR processing
         function processQRCode(decodedText) {
             console.log('=== PROCESSING QR CODE ===');
             console.log('URL:', decodedText);
             
             try {
-                // Try to parse as URL
                 const url = new URL(decodedText);
-                console.log('✓ Valid URL object created');
-                console.log('Origin:', url.origin);
-                console.log('Pathname:', url.pathname);
+                console.log('✓ Valid URL');
                 console.log('Hash:', url.hash);
-                console.log('Hash length:', url.hash.length);
                 
-                // Extract peer ID (remove # symbol)
                 const scannedPeerId = url.hash.substring(1);
                 console.log('🎯 Extracted Peer ID:', scannedPeerId);
-                console.log('🎯 Peer ID length:', scannedPeerId.length);
-                console.log('🎯 Peer ID type:', typeof scannedPeerId);
+                console.log('🎯 Length:', scannedPeerId.length);
                 
-                // Validate peer ID
                 if (!scannedPeerId || scannedPeerId.trim() === '') {
                     console.error('❌ Empty peer ID!');
                     alert('QR code has no peer ID');
                     hasScanned = false;
+                    ALLOW_PEER_INIT = true;
                     return;
                 }
                 
                 console.log('✓ Peer ID is valid');
                 
-                // Check if already switching
                 if (window.IS_SWITCHING) {
                     console.log('⚠ Already switching, ignoring...');
                     return;
                 }
                 
-                // Check if switch function exists
                 if (!window.switchToClientAndConnect) {
                     console.error('❌❌❌ Switch function NOT FOUND!');
-                    alert('Error: App not ready. Please refresh.');
+                    alert('Error: App not ready');
                     hasScanned = false;
+                    ALLOW_PEER_INIT = true;
                     return;
                 }
                 
@@ -1054,17 +1051,16 @@
                 window.IS_SWITCHING = true;
                 console.log('🔄 TRIGGERING CLIENT MODE SWITCH...');
                 
-                // Call the switch function
+                // IMMEDIATE SWITCH - NO DELAY
                 window.switchToClientAndConnect(scannedPeerId);
                 
             } catch (e) {
                 console.error('❌❌❌ QR parse FAILED:', e);
-                console.error('Error name:', e.name);
-                console.error('Error message:', e.message);
-                console.error('Stack:', e.stack);
+                console.error('Error:', e.message);
                 alert('Invalid QR code: ' + e.message);
                 window.IS_SWITCHING = false;
                 hasScanned = false;
+                ALLOW_PEER_INIT = true;
             }
         }
 
@@ -1161,12 +1157,15 @@
                 }
             }
 
-            // CRITICAL: Define switch function IMMEDIATELY
+            // CRITICAL: Define switch function FIRST
             window.switchToClientAndConnect = function(targetPeerId) {
                 console.log('===================================');
                 console.log('🔄 SWITCHING TO CLIENT MODE');
                 console.log('Target Peer:', targetPeerId);
                 console.log('===================================');
+                
+                // PREVENT any peer init during this process
+                ALLOW_PEER_INIT = false;
                 
                 console.log('1️⃣ Hiding QR, showing connecting...');
                 qrCodeContainer.style.display = 'none';
@@ -1198,60 +1197,63 @@
                 console.log('3️⃣ Mode set to CLIENT');
                 
                 console.log('4️⃣ Creating new client peer...');
-                setTimeout(() => {
-                    try {
-                        peer = new Peer({
-                            config: {
-                                iceServers: [
-                                    { urls: 'stun:stun.l.google.com:19302' },
-                                    { 
-                                        urls: 'turn:openrelay.metered.ca:80',
-                                        username: 'openrelayproject',
-                                        credential: 'openrelayproject'
-                                    }
-                                ],
-                                sdpSemantics: 'unified-plan'
-                            },
-                            debug: 1
-                        });
-                        
-                        window.APP_PEER = peer;
-                        console.log('✓ New peer created');
-                        
-                        peer.on('open', (newMyId) => {
-                            console.log('✓✓ New Peer ID:', newMyId);
-                            myId = newMyId;
-                            
-                            console.log('5️⃣ Connecting to target:', targetPeerId);
-                            attemptConnection(targetPeerId);
-                        });
-                        
-                        peer.on('error', (err) => {
-                            console.error('❌ Client peer error:', err.type);
-                            if (err.type === 'peer-unavailable') {
-                                if (connectionRetryCount < MAX_RETRY) {
-                                    connectionRetryCount++;
-                                    statusEl.textContent = `🔄 Retry ${connectionRetryCount}`;
-                                    setTimeout(() => attemptConnection(targetPeerId), 2000);
-                                } else {
-                                    statusEl.textContent = '❌ Not found';
-                                    showSwitchButton();
-                                    window.IS_SWITCHING = false;
-                                    hasScanned = false;
+                
+                // CRITICAL: Create peer with CLIENT flag
+                try {
+                    peer = new Peer({
+                        config: {
+                            iceServers: [
+                                { urls: 'stun:stun.l.google.com:19302' },
+                                { 
+                                    urls: 'turn:openrelay.metered.ca:80',
+                                    username: 'openrelayproject',
+                                    credential: 'openrelayproject'
                                 }
+                            ],
+                            sdpSemantics: 'unified-plan'
+                        },
+                        debug: 1
+                    });
+                    
+                    window.APP_PEER = peer;
+                    console.log('✓ New peer created');
+                    
+                    peer.on('open', (newMyId) => {
+                        console.log('✓✓ New Peer ID:', newMyId);
+                        myId = newMyId;
+                        
+                        console.log('5️⃣ Connecting to target:', targetPeerId);
+                        attemptConnection(targetPeerId);
+                    });
+                    
+                    peer.on('error', (err) => {
+                        console.error('❌ Client peer error:', err.type);
+                        if (err.type === 'peer-unavailable') {
+                            if (connectionRetryCount < MAX_RETRY) {
+                                connectionRetryCount++;
+                                statusEl.textContent = `🔄 Retry ${connectionRetryCount}`;
+                                setTimeout(() => attemptConnection(targetPeerId), 2000);
                             } else {
+                                statusEl.textContent = '❌ Not found';
+                                showSwitchButton();
                                 window.IS_SWITCHING = false;
                                 hasScanned = false;
+                                ALLOW_PEER_INIT = true;
                             }
-                        });
-                        
-                    } catch (e) {
-                        console.error('❌ Failed to create peer:', e);
-                        statusEl.textContent = '❌ Error';
-                        window.IS_SWITCHING = false;
-                        hasScanned = false;
-                    }
-                }, 500);
+                        } else {
+                            window.IS_SWITCHING = false;
+                            hasScanned = false;
+                            ALLOW_PEER_INIT = true;
+                        }
+                    });
+                    
+                } catch (e) {
+                    console.error('❌ Failed to create peer:', e);
+                    statusEl.textContent = '❌ Error';
+                    window.IS_SWITCHING = false;
+                    hasScanned = false;
+                    ALLOW_PEER_INIT = true;
+                }
             };
             
             console.log('✓ Switch function registered globally');
@@ -1268,12 +1270,19 @@
                 window.APP_CONNECTION = null;
                 connectionRetryCount = 0;
                 isHost = true;
+                ALLOW_PEER_INIT = true;
                 statusEl.textContent = '🔄 Creating QR...';
                 
                 setTimeout(() => initializePeer(), 1000);
             }
 
             function initializePeer() {
+                // CRITICAL: Check if peer init is allowed
+                if (!ALLOW_PEER_INIT) {
+                    console.log('🚫 Peer init BLOCKED (scanner active or switching)');
+                    return;
+                }
+                
                 console.log('🔧 Initializing peer...');
                 
                 statusEl.textContent = 'Initializing...';
@@ -1406,6 +1415,7 @@
                         showSwitchButton();
                         window.IS_SWITCHING = false;
                         hasScanned = false;
+                        ALLOW_PEER_INIT = true;
                     }
                 };
 
@@ -1424,6 +1434,7 @@
                             connectionRetryCount = 0;
                             window.IS_SWITCHING = false;
                             hasScanned = false;
+                            ALLOW_PEER_INIT = true;
                             setupConnection(conn);
                         }
                     });
@@ -1799,6 +1810,7 @@
             
             downloadQrButton.addEventListener('click', downloadQRCode);
 
+            // START peer initialization
             initializePeer();
         });
     </script>

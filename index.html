@@ -935,6 +935,11 @@
         window.APP_CONNECTION = null;
 
         function openScanner() {
+            // ADDED GUARD: If scanner modal is already active or we are scanning, do nothing.
+            if (isScanning || document.getElementById('scanner-modal').classList.contains('active')) {
+                console.log('⚠ openScanner called but scanner is already active. Ignoring.');
+                return;
+            }
             console.log('📷 Opening scanner...');
             hasScanned = false;
             // Block peer auto-init *before* starting scanner
@@ -1022,6 +1027,13 @@
          * UPDATED: This function now sets the URL hash and reloads the page.
          */
         function processQRCode(decodedText) {
+            // ADDED GUARD: Prevent multiple reloads
+            if (IS_RELOADING) {
+                console.log('⚠ Already processing QR and reloading. Ignoring.');
+                return;
+            }
+            IS_RELOADING = true; // Set flag immediately
+
             console.log('=== PROCESSING QR CODE ===');
             console.log('URL:', decodedText);
             
@@ -1050,14 +1062,14 @@
                 console.log('🔄 Setting hash and reloading to switch to CLIENT mode...');
                 window.location.hash = scannedPeerId;
                 window.location.reload();
-                // --- END NEW LOGIC ---
-                
+<!-- ... existing code ...
             } catch (e) {
                 console.error('❌❌❌ QR parse FAILED:', e);
                 console.error('Error:', e.message);
                 alert('Invalid QR code: ' + e.message);
                 hasScanned = false; // Allow re-scan
                 ALLOW_PEER_INIT = true; // Allow peer init to recover
+                IS_RELOADING = false; // RESET FLAG on error
             }
         }
 
@@ -1730,3 +1742,4 @@
     </script>
 </body>
 </html>
+
